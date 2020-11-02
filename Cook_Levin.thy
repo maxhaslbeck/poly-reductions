@@ -109,7 +109,8 @@ definition wf_com where
 definition P where
   "P = {D. \<exists>P\<in>wf_com. 
             (\<exists>p_t. poly p_t \<and>
-                (\<forall>x s. s ''x'' = x \<longrightarrow> (\<exists>t s'. (P,s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t x \<and> (s' ''r'' = 1 \<longleftrightarrow> x\<in>D) )))
+               (\<forall>x.
+                  (x\<in>D \<longleftrightarrow> (\<exists>t s s'. s ''x'' = x \<and> (P,s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t x \<and> s' ''r'' = 1))))
         }" 
 
 
@@ -150,13 +151,30 @@ lemma "D \<in> NP \<longleftrightarrow> (\<exists>D\<^sub>C\<in>P. (\<exists>p_c
   apply simp
   apply safe
   subgoal for P p_t p_c
-    apply (rule exI[where x=DC]) (* ? ? ? I don't get the role of D\<^sub>c here*)
+    \<comment> \<open>\<open>P\<close> is the decision procedure.
+        The decision problem is trivially \<open>D_P\<close>, the set accepted by \<open>P\<close>\<close>
+    apply (rule exI[where x =
+          "{n. \<exists>s t s'. s ''x'' = n \<and> (P, s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t n \<and> s' ''r'' = 1}"])
     apply safe
-     apply(rule bexI[where x=P]) apply simp_all
-     apply(rule exI[where x=p_t]) apply simp_all
-     apply safe subgoal for s sorry
-    subgoal sorry
-   sorry
+    subgoal \<comment> \<open>Show that \<open>D_P\<close> is decided by \<open>P\<close>\<close>
+      apply fastforce
+      done
+    apply clarsimp
+    apply (rule exI[where x = p_c], clarsimp)
+    apply safe
+    subgoal for x c
+      apply (rule exI[where x = c], rule conjI, assumption)
+      apply (rule exI[where x = "(\<lambda>_. undefined)(''x'' := enc_pair (x, c))"])
+      apply auto
+      done
+    subgoal for x c s t s'
+      apply (rule exI[where x = c], rule conjI, assumption)
+      apply auto
+      subgoal for s1 \<comment> \<open>The definition of @{term depends_on_input} is too weak:
+        we are missing termination\<close>
+        sorry
+      done
+    done
   subgoal premises prems for D\<^sub>C P p_c p_t
     apply(rule bexI[where x=P])
      apply(rule exI[where x=p_t])
@@ -168,27 +186,26 @@ lemma "D \<in> NP \<longleftrightarrow> (\<exists>D\<^sub>C\<in>P. (\<exists>p_c
       apply rule
       subgoal apply safe subgoal for c apply(rule exI[where x= c]) apply simp
         apply safe  subgoal for s
-          using prems(5)[rule_format, of s] by auto
+          \<comment> \<open>Again, we are missing termination in @{term depends_on_input}\<close>
+          sorry
         done
       done
     subgoal apply safe subgoal for c apply(rule exI[where x=c])
       apply simp
       subgoal premises prem2
         using 
-            prem2(2)[rule_format, of "0(''x'':=enc_pair(x,c))"]
-        using prems(5)[rule_format, of "0(''x'':=enc_pair(x,c))"]
-        apply simp apply safe
-        subgoal premises p2 for t1 t2 s1' s2' 
-          using prems(1)[unfolded wf_com_def, simplified, THEN depends_on_inputD, OF _ p2(1) p2(2)]
-            p2(1,2) p2
-          apply auto done
+          prem2(2)[rule_format, of "0(''x'':=enc_pair(x,c))"]
+        apply auto
+        subgoal for t s'
+          apply (rule exI[where x = t], rule exI[where x = "0(''x'':=enc_pair(x,c))"])
+          apply auto
+          done
         done
       done
     done
   done
   done
   done
-
 
 
 (* idee man könnte als convention machen,
@@ -267,10 +284,12 @@ proof -
                             )
                          )
                   )"
-    unfolding NP_def by blast
+    unfolding NP_def sorry
 
   from assms(2) obtain f p_f where
-    "poly p_f" and f: "(\<And>x s. s ''x'' = x \<Longrightarrow> (\<exists>t s'. (f,s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_f (size(x)) \<and> (s' ''r'' \<in> D'\<longleftrightarrow>x \<in> D)))"
+    "poly p_f" and f:
+    "(\<And>x s. s ''x'' = x \<Longrightarrow>
+            (\<exists>t s'. (f,s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_f (size(x)) \<and> (s' ''r'' \<in> D' \<longleftrightarrow> x \<in> D)))"
     unfolding IMP_reduction_alt
     by blast
 
@@ -299,9 +318,9 @@ proof -
   show "D \<in> NP"
     unfolding NP_def
     apply safe
-    apply(rule exI[where x=P])
-    apply(rule exI[where x=p_t])
-    apply(rule exI[where x=p_c])
+    apply(rule bexI[where x=P])
+    apply(rule exI[where x=p_t_D'])
+    apply(rule exI[where x=p_c_D'])
     apply safe
     subgoal sorry
     subgoal sorry
@@ -317,7 +336,7 @@ proof -
         and "\<And>s. s ''x'' = enc_pair (s' ''r'', c) \<Longrightarrow> (\<exists>t s'a. (P_D', s) \<Rightarrow> t \<Down> s'a \<and> t \<le> p_t_D' (s' ''r'') \<and> s'a ''r'' = 1)"
       by blast
 
-    show "\<exists>c\<le>p_c x. \<forall>s. s ''x'' = enc_pair (x, c) \<longrightarrow> (\<exists>t s'. (P, s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t x \<and> s' ''r'' = 1)"
+    show "\<exists>c\<le>p_c_D' x. \<forall>s. s ''x'' = enc_pair (x, c) \<longrightarrow> (\<exists>t s'. (P, s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t_D' x \<and> s' ''r'' = 1)"
       (* now use the witness c *)
       apply(rule exI[where x=c])
       apply safe 
@@ -364,7 +383,7 @@ proof
                             )
                          )
                   )"
-    unfolding NP_def by blast
+    unfolding NP_def by blas
 
   define p_f where "p_f = (\<lambda>n::nat. n)"
   have "poly p_f" sorry
