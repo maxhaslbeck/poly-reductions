@@ -99,18 +99,20 @@ begin
 section \<open>P - deterministic polynomial computation\<close>
 
 definition depends_on_input where
-  "depends_on_input P \<equiv> (\<forall>s1 s1' t s2 s2'. s1 ''x'' = s2 ''x'' \<longrightarrow> ((P,s1) \<Rightarrow> t \<Down> s1')
-                                  \<longrightarrow> ((P,s2) \<Rightarrow> t \<Down> s2') \<and> s1' ''r'' = s2' ''r'')"
+  "depends_on_input P \<equiv> (\<forall>s1 s1' t s2. s1 ''x'' = s2 ''x'' \<longrightarrow> ((P,s1) \<Rightarrow> t \<Down> s1')
+                                  \<longrightarrow> (\<exists>s2'. ((P,s2) \<Rightarrow> t \<Down> s2') \<and> s1' ''r'' = s2' ''r''))"
 
 definition wf_com where
   "wf_com \<equiv> {P. depends_on_input P}"
 
 
+definition len :: "nat \<Rightarrow> nat" where "len x = undefined"
+
 definition P where
   "P = {D. \<exists>P\<in>wf_com. 
             (\<exists>p_t. poly p_t \<and>
                (\<forall>x.
-                  (x\<in>D \<longleftrightarrow> (\<exists>t s s'. s ''x'' = x \<and> (P,s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t x \<and> s' ''r'' = 1))))
+                  (x\<in>D \<longleftrightarrow> (\<exists>t s s'. s ''x'' = x \<and> (P,s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t (len x) \<and> s' ''r'' = 1))))
         }" 
 
 
@@ -122,9 +124,9 @@ definition NP where
   "NP = {D. \<exists>P\<in>wf_com.
                (\<exists>p_t p_c. poly p_t \<and> poly p_c \<and>
                   (\<forall>x. x \<in> D
-                     \<longleftrightarrow> (\<exists>c. c \<le> p_c x \<and> 
+                     \<longleftrightarrow> (\<exists>c. len c \<le> p_c x \<and> 
                             (\<forall>s. s ''x'' = enc_pair (x,c)
-                                 \<longrightarrow> (\<exists>t s'. (P,s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t (enc_pair (x,c)) \<and> s' ''r'' = 1) 
+                                 \<longrightarrow> (\<exists>t s'. (P,s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t (len (enc_pair (x,c))) \<and> s' ''r'' = 1) 
                             )
                          )
                   )
@@ -135,10 +137,11 @@ lemma deterministic: "(c, s) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow> (c, 
   sorry
 
 
+
 lemma depends_on_inputD:
   assumes  "depends_on_input c"
   shows "\<And>s1 s1' t1 t2 s2 s2'. s1 ''x'' = s2 ''x'' \<Longrightarrow> ((c,s1) \<Rightarrow> t1 \<Down> s1')
-                      \<Longrightarrow> ((c,s2) \<Rightarrow> t2 \<Down> s2') \<Longrightarrow> t1 = t2 \<and>  s1' ''r'' = s2' ''r''"
+                      \<Longrightarrow> (\<exists>t2 s2'. ((c,s2) \<Rightarrow> t2 \<Down> s2') \<and> t1 = t2 \<and>  s1' ''r'' = s2' ''r'')"
   using assms unfolding depends_on_input_def 
   using deterministic  by blast
   
@@ -146,7 +149,7 @@ lemma depends_on_inputD:
   apparently the rhs is stronger, it implies the lhs,
   but I could not yet show equivalence
  *)
-lemma "D \<in> NP \<longleftrightarrow> (\<exists>D\<^sub>C\<in>P. (\<exists>p_c. poly p_c \<and> (\<forall>x. x\<in>D \<longleftrightarrow> (\<exists>c. c \<le> p_c x \<and> enc_pair(x,c) \<in> D\<^sub>C))))"
+lemma "D \<in> NP \<longleftrightarrow> (\<exists>D\<^sub>C\<in>P. (\<exists>p_c. poly p_c \<and> (\<forall>x. x\<in>D \<longleftrightarrow> (\<exists>c. len c \<le> p_c x \<and> enc_pair(x,c) \<in> D\<^sub>C))))"
   unfolding NP_def P_def 
   apply simp
   apply safe
@@ -154,7 +157,7 @@ lemma "D \<in> NP \<longleftrightarrow> (\<exists>D\<^sub>C\<in>P. (\<exists>p_c
     \<comment> \<open>\<open>P\<close> is the decision procedure.
         The decision problem is trivially \<open>D_P\<close>, the set accepted by \<open>P\<close>\<close>
     apply (rule exI[where x =
-          "{n. \<exists>s t s'. s ''x'' = n \<and> (P, s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t n \<and> s' ''r'' = 1}"])
+          "{n. \<exists>s t s'. s ''x'' = n \<and> (P, s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t (len n) \<and> s' ''r'' = 1}"])
     apply safe
     subgoal \<comment> \<open>Show that \<open>D_P\<close> is decided by \<open>P\<close>\<close>
       apply fastforce
@@ -170,9 +173,14 @@ lemma "D \<in> NP \<longleftrightarrow> (\<exists>D\<^sub>C\<in>P. (\<exists>p_c
     subgoal for x c s t s'
       apply (rule exI[where x = c], rule conjI, assumption)
       apply auto
-      subgoal for s1 \<comment> \<open>The definition of @{term depends_on_input} is too weak:
+      subgoal premises p for s1 \<comment> \<open>The definition of @{term depends_on_input} is too weak:
         we are missing termination\<close>
-        sorry
+        using p(1)[unfolded wf_com_def, simplified, THEN depends_on_inputD, of s s1, simplified p(6,10), OF _ p(7)]
+        apply auto subgoal for s2'
+          apply(rule exI[where x=t])
+          apply(rule exI[where x=s2'])
+          using p by auto
+        done
       done
     done
   subgoal premises prems for D\<^sub>C P p_c p_t
@@ -184,10 +192,13 @@ lemma "D \<in> NP \<longleftrightarrow> (\<exists>D\<^sub>C\<in>P. (\<exists>p_c
     apply(rule) 
     subgoal for x
       apply rule
-      subgoal apply safe subgoal for c apply(rule exI[where x= c]) apply simp
-        apply safe  subgoal for s
+      subgoal apply safe subgoal for c t s s' apply(rule exI[where x= c]) apply simp
+        apply safe  subgoal premises p for s1
           \<comment> \<open>Again, we are missing termination in @{term depends_on_input}\<close>
-          sorry
+          using prems(1)[unfolded wf_com_def, simplified, THEN depends_on_inputD, of s s1, simplified p(2,6), OF _ p(3)]
+          apply auto 
+          subgoal for s2' apply(rule exI[where x=t]) apply(rule exI[where x=s2']) using prems p by auto
+          done
         done
       done
     subgoal apply safe subgoal for c apply(rule exI[where x=c])
