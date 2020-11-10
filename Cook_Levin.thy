@@ -34,7 +34,7 @@ IfFalse: "\<lbrakk> s r = 0;  (c2,s) \<Rightarrow> x \<Down> t; y=x+1  \<rbrakk>
 WhileFalse: "\<lbrakk> s r = 0 \<rbrakk> \<Longrightarrow> (WHILE r DO c,s) \<Rightarrow> Suc 0 \<Down> s" |
 WhileTrue: "\<lbrakk> s1 r \<noteq> 0;  (c,s1) \<Rightarrow> x \<Down> s2;  (WHILE r DO c, s2) \<Rightarrow> y \<Down> s3; 1+x+y=z  \<rbrakk> 
     \<Longrightarrow> (WHILE r DO c, s1) \<Rightarrow> z \<Down> s3"
-
+print_theorems
 
 
 
@@ -124,7 +124,7 @@ definition NP where
   "NP = {D. \<exists>P\<in>wf_com.
                (\<exists>p_t p_c. poly p_t \<and> poly p_c \<and>
                   (\<forall>x. x \<in> D
-                     \<longleftrightarrow> (\<exists>c. len c \<le> p_c x \<and> 
+                     \<longleftrightarrow> (\<exists>c. len c \<le> p_c (len x) \<and> 
                             (\<forall>s. s ''x'' = enc_pair (x,c)
                                  \<longrightarrow> (\<exists>t s'. (P,s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t (len (enc_pair (x,c))) \<and> s' ''r'' = 1) 
                             )
@@ -149,7 +149,7 @@ lemma depends_on_inputD:
   apparently the rhs is stronger, it implies the lhs,
   but I could not yet show equivalence
  *)
-lemma "D \<in> NP \<longleftrightarrow> (\<exists>D\<^sub>C\<in>P. (\<exists>p_c. poly p_c \<and> (\<forall>x. x\<in>D \<longleftrightarrow> (\<exists>c. len c \<le> p_c x \<and> enc_pair(x,c) \<in> D\<^sub>C))))"
+lemma "D \<in> NP \<longleftrightarrow> (\<exists>D\<^sub>C\<in>P. (\<exists>p_c. poly p_c \<and> (\<forall>x. x\<in>D \<longleftrightarrow> (\<exists>c. len c \<le> p_c (len x) \<and> enc_pair(x,c) \<in> D\<^sub>C))))"
   unfolding NP_def P_def 
   apply simp
   apply safe
@@ -236,14 +236,23 @@ definition IMP_reduction (infix "\<le>\<^sub>I" 50) where
   "D \<le>\<^sub>I D' \<equiv>
    (\<exists>p. poly p \<and> 
      (\<exists>f::com.
-       (\<forall>x. time (f, x) \<le> p(size(x))
+       (\<forall>x. time (f, x) \<le> p(len (x))
         \<and>  (x \<in> D \<longleftrightarrow> (result (f,x) ) \<in> D'))))"
+
+text \<open>@{term \<open>A \<le>\<^sub>I B\<close>} : "A can be reduced to B".
+    Intuition:
+  \<^item> "B is at least as hard as A"
+  \<^item> "if we can solve B, we can also solve A"
+  \<^item> "if A is unsolvable, B also is"
+   \<close>
+
 
 lemma IMP_reduction_alt:
   "D \<le>\<^sub>I D' =
-   (\<exists>p. poly p \<and> 
-     (\<exists>f::com.
-       (\<forall>x. ((\<forall>s. s ''x'' = x \<longrightarrow> (\<exists>t s'. (f,s) \<Rightarrow> t \<Down> s' \<and> t \<le> p(size(x)) \<and> (s' ''r'' \<in> D' \<longleftrightarrow> x \<in> D)))))))"
+   (\<exists>p_t p_r. poly p_t \<and> poly p_r \<and> 
+     (\<exists>f\<in>wf_com.
+       (\<forall>x. ((\<forall>s. s ''x'' = x \<longrightarrow> (\<exists>t s'. (f,s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t (len (x))
+                               \<and> len (s' ''r'') \<le> p_r (len x) \<and> (s' ''r'' \<in> D' \<longleftrightarrow> x \<in> D)))))))"
   sorry
  
 (* TODO: define NP hard *)
@@ -257,68 +266,124 @@ text \<open>A problem in B in NP is NP-complete if, for any problem in NP, there
 definition "NP_complete D = undefined"
 
 
-definition decode_pair :: "_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>com" where
-  "decode_pair S a b = undefined"
+definition decode_pair' :: "_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>com" where
+  "decode_pair' S a b = undefined"
 
-lemma decode_pair_correct:
+lemma decode_pair'_correct:
   "finite S \<Longrightarrow> (\<forall>s. s ''x'' = enc_pair (x, y) \<longrightarrow> 
-    (\<exists>t s'. (decode_pair S a b,s) \<Rightarrow> t \<Down> s' \<and> s' a = x \<and> s' b = y \<and> (\<forall>v\<in>S. s' v = s v)))"
+    (\<exists>t s'. (decode_pair' S a b,s) \<Rightarrow> t \<Down> s' \<and> s' a = x \<and> s' b = y \<and> (\<forall>v\<in>S. s' v = s v)))"
   sorry
+definition decode_pair :: "_\<Rightarrow>_\<Rightarrow>com" where
+  "decode_pair  a b = undefined"
+
 lemma decode_pair_correct':
   "(s ''x'' = enc_pair (x, y) \<Longrightarrow> 
-    (\<exists>t s'. (decode_pair {} a b,s) \<Rightarrow> t \<Down> s' \<and> s' a = x \<and> s' b = y ))"
+    (\<exists>t s'. (decode_pair  a b,s) \<Rightarrow> t \<Down> s' \<and> s' a = x \<and> s' b = y ))"
   sorry
 
-definition encode_pair :: "_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>com" where
-  "encode_pair S a b c = undefined"
+lemma decode_pair_deterministic:
+  "s ''x'' = s2 ''x'' \<Longrightarrow> (decode_pair a b,s) \<Rightarrow> t \<Down> s' \<Longrightarrow> (decode_pair a b,s2) \<Rightarrow> t2 \<Down> s2'
+    \<Longrightarrow> t=t2 \<and> s' a = s2' a \<and> s' b = s2' b"
+  sorry
+
+
+definition encode_pair' :: "_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>com" where
+  "encode_pair' S a b c = undefined"
+
+definition encode_pair :: "_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>com" where
+  "encode_pair  a b c = undefined"
+
+lemma encode_pair'_correct:
+  "finite S \<Longrightarrow> (\<forall>s. (\<exists>t s'. (encode_pair' S a b c,s) \<Rightarrow> t \<Down> s' \<and> s' c = enc_pair (s a, s b) \<and> (\<forall>v\<in>S. s' v = s v)))"
+  sorry
 
 lemma encode_pair_correct:
-  "finite S \<Longrightarrow> (\<forall>s. (\<exists>t s'. (encode_pair S a b c,s) \<Rightarrow> t \<Down> s' \<and> s' c = enc_pair (s a, s b) \<and> (\<forall>v\<in>S. s' v = s v)))"
+  "(\<forall>s. (\<exists>t s'. (encode_pair a b c,s) \<Rightarrow> t \<Down> s' \<and> s' c = enc_pair (s a, s b)))"
   sorry
+
+lemma encode_pair_determ:
+  "s1 a = s2 a \<Longrightarrow> s1 b = s2 b \<Longrightarrow> (encode_pair a b c,s1) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow> (encode_pair a b c,s2) \<Rightarrow> t2 \<Down> s2' \<Longrightarrow> 
+      t1=t2 \<and> s1' c = s2' c"
+  sorry
+
 
 
 lemma finite_vars: "finite (vars f)"
   sorry
 
+lemma f_only_changes_its_vars: "v \<notin> vars f \<Longrightarrow> (f,s) \<Rightarrow> t \<Down> s' \<Longrightarrow> s' v = s v"
+  sorry
+
+
+lemma SeqD: "(c1;;c2,s) \<Rightarrow> t \<Down> s'' \<Longrightarrow> (\<exists>t1 t2 s'. (c1,s) \<Rightarrow> t1 \<Down> s' \<and> (c2,s') \<Rightarrow> t2 \<Down> s'' \<and> t = t1 + t2)"
+  apply(cases rule: big_step_t.cases) apply simp
+       apply simp_all
+  apply auto done
+  
+
+lemma seq_post: "(\<exists>t1 s' t2 s''. (c1,s) \<Rightarrow> t1 \<Down> s' \<and> (c2,s') \<Rightarrow> t2 \<Down> s'' \<and> Q (t1+t2) s'') \<Longrightarrow> (\<exists>t s''. (c1;;c2,s) \<Rightarrow> t \<Down> s'' \<and> Q t s'')"
+  apply auto
+  subgoal for t1 s' t2 s''
+    apply(rule exI[where x="t1+t2"])
+    apply(rule exI[where x=s''])
+    apply simp
+    apply rule apply simp_all
+    done
+  done
+(*    assumes "D' \<in> NP"and "D \<le>\<^sub>I D'"shows "D \<in> NP" *)
 theorem (* Sanity check for definition of NP and poly-reduction *)
+  inNP_if_reducible_to_inNP:
   assumes "D' \<in> NP"
     and "D \<le>\<^sub>I D'"
   shows
     "D \<in> NP"
 proof -
   from assms(1) obtain P_D' p_c_D' p_t_D' where
-      "poly p_t_D'" "poly p_c_D'" and
+     wf_P_D': "P_D'\<in>wf_com" and "poly p_t_D'" "poly p_c_D'" and
      *: "(\<And>x. x \<in> D'
-                     \<longleftrightarrow> (\<exists>c. c \<le> p_c_D' x \<and> 
+                     \<longleftrightarrow> (\<exists>c. len c \<le> p_c_D' (len x) \<and> 
                             (\<forall>s. s ''x'' = enc_pair (x,c)
-                                 \<longrightarrow> (\<exists>t s'. (P_D',s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t_D' x \<and> s' ''r'' = 1) 
+                                 \<longrightarrow> (\<exists>t s'. (P_D',s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t_D' (len (enc_pair (x,c))) \<and> s' ''r'' = 1) 
                             )
                          )
                   )"
-    unfolding NP_def sorry
+    unfolding NP_def by auto
 
-  from assms(2) obtain f p_f where
-    "poly p_f" and f:
+  from assms(2) obtain f p_f p_r where
+    "poly p_f" "poly p_r" and wf_f: "f\<in>wf_com" and f:
     "(\<And>x s. s ''x'' = x \<Longrightarrow>
-            (\<exists>t s'. (f,s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_f (size(x)) \<and> (s' ''r'' \<in> D' \<longleftrightarrow> x \<in> D)))"
+            (\<exists>t s'. (f,s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_f (len (x)) \<and> len (s' ''r'') \<le> p_r (len x) \<and> (s' ''r'' \<in> D' \<longleftrightarrow> x \<in> D)))"
     unfolding IMP_reduction_alt
     by blast
 
   (* f's time and result only depends on ''x'' *)
-  have "\<And>s1 s2 s1' s2' t1 t2. s1 ''x'' = s2 ''x'' \<Longrightarrow> (f,s1) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow> (f,s2) \<Rightarrow> t2 \<Down> s2' \<Longrightarrow> t1=t2 \<and> s1' ''r'' = s2' ''r''" 
+  have f_dep: "\<And>s1 s2 s1' s2' t1 t2. s1 ''x'' = s2 ''x'' \<Longrightarrow> (f,s1) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow> (\<exists>s2' t2.  (f,s2) \<Rightarrow> t2 \<Down> s2' \<and> t1=t2 \<and> s1' ''r'' = s2' ''r'')" 
+    using wf_f unfolding wf_com_def depends_on_input_def   by blast
+
+  have f_dep2: "\<And>s1 s2 s1' s2' t1 t2. s1 ''x'' = s2 ''x'' \<Longrightarrow> (f,s1) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow>  (f,s2) \<Rightarrow> t2 \<Down> s2' \<Longrightarrow> t1=t2 \<and> s1' ''r'' = s2' ''r''" 
     sorry
+
+  have P_D'_dep: "\<And>s1 s2 s1' s2' t1 t2. s1 ''x'' = s2 ''x'' \<Longrightarrow> (P_D',s1) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow> (\<exists>s2' t2.  (P_D',s2) \<Rightarrow> t2 \<Down> s2' \<and> t1=t2 \<and> s1' ''r'' = s2' ''r'')" 
+    using wf_P_D' unfolding wf_com_def depends_on_input_def   by blast
+
+
+  have P_D'_dep2: "\<And>s1 s2 s1' s2' t1 t2. s1 ''x'' = s2 ''x'' \<Longrightarrow> (P_D',s1) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow>  (P_D',s2) \<Rightarrow> t2 \<Down> s2' \<Longrightarrow> t1=t2 \<and> s1' ''r'' = s2' ''r''" 
+    sorry
+
 
   have "\<And>P Q. (~(\<forall>x. P x \<longrightarrow> Q x)) \<longleftrightarrow> (\<exists>x. P x \<and> ~ Q x)" by blast  
 
   (* get the variables that f writes *)
   (* get a variable that is not written by f *)
   from finite_vars[of f] obtain v where
-      "v \<notin> vars f" 
+      vnf: "v \<notin> vars f" 
     using ex_new_if_finite infinite_UNIV_listI by blast
 
-  define P where "P = decode_pair {} ''x'' v ;; (
+  thm f_only_changes_its_vars
+
+  define P where "P = decode_pair ''x'' v ;; (
             f ;; (
-            encode_pair {} ''r'' v ''x'';;
+            encode_pair ''r'' v ''x'';;
             P_D') )" (* P should expect input (x,c),
           first, decode (x,c) into x and c,
           write x into ''x'', and c into a fresh variable not written by f,
@@ -326,12 +391,21 @@ proof -
           now encode (x',c) into ''x''
           then execute P_D' on on (x',c) to get the right result *) 
 
+  have P_wf: "P \<in> wf_com" sorry
+
+  let ?pp = "(\<lambda>x. p_c_D' (p_r x))"
+  have p_c_D'_mono: "\<And>x y. x\<le>y \<Longrightarrow> p_c_D' x \<le> p_c_D' y"  sorry
+
   show "D \<in> NP"
     unfolding NP_def
     apply safe
     apply(rule bexI[where x=P])
-    apply(rule exI[where x=p_t_D'])
-    apply(rule exI[where x=p_c_D'])
+     apply(rule exI[where x=ppp]) (* incorporates - decode_time
+                                                  - p_f
+                                                  - encode_time
+                                                  - p_t_D'
+       *)
+    apply(rule exI[where x="?pp"])
     apply safe
     subgoal sorry
     subgoal sorry
@@ -340,37 +414,146 @@ proof -
     assume a: "x\<in>D"
     (* we have the x:D, now "execute" f to get a x':D'*)
     from f[of "0(''x'':=x)" x] obtain t s'
-      where "(f, 0(''x'' := x)) \<Rightarrow> t \<Down> s' \<and> t \<le> p_f (size x)" and 2: "(s' ''r'' \<in> D') = (x \<in> D)"
+      where f_0: "(f, 0(''x'' := x)) \<Rightarrow> t \<Down> s'" and lens'r: "len (s' ''r'') \<le> p_r (len x)"
+          and "t \<le> p_f (len x)" and 2: "(s' ''r'' \<in> D') = (x \<in> D)"
       by auto
     (* from that one get a witness c *)
-    from a 2 *[of "s' ''r''"] obtain c where "c\<le>p_c_D' (s' ''r'')"
-        and "\<And>s. s ''x'' = enc_pair (s' ''r'', c) \<Longrightarrow> (\<exists>t s'a. (P_D', s) \<Rightarrow> t \<Down> s'a \<and> t \<le> p_t_D' (s' ''r'') \<and> s'a ''r'' = 1)"
+    from a 2 *[of "s' ''r''"] obtain c where len_c: "len c\<le>p_c_D' (len (s' ''r''))"
+        and co: "\<And>s. s ''x'' = enc_pair (s' ''r'', c) \<Longrightarrow> (\<exists>t s'a. (P_D', s) \<Rightarrow> t \<Down> s'a \<and> t \<le> p_t_D' (len (enc_pair (s' ''r'', c))) \<and> s'a ''r'' = 1)"
       by blast
 
-    show "\<exists>c\<le>p_c_D' x. \<forall>s. s ''x'' = enc_pair (x, c) \<longrightarrow> (\<exists>t s'. (P, s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t_D' x \<and> s' ''r'' = 1)"
+
+    show "\<exists>c. len c\<le>?pp (len x) \<and> (\<forall>s. s ''x'' = enc_pair (x, c) \<longrightarrow> (\<exists>t s'. (P, s) \<Rightarrow> t \<Down> s' \<and> t \<le> ppp (len (enc_pair (x, c))) \<and> s' ''r'' = 1))"
       (* now use the witness c *)
       apply(rule exI[where x=c])
       apply safe 
-      subgoal        
-        sorry
+      subgoal      
+        apply(rule order.trans[OF len_c])
+        apply(rule p_c_D'_mono)
+        by(rule lens'r)
       unfolding P_def
       subgoal for s
+        apply(rule seq_post)
       apply(drule decode_pair_correct'[where a="''x''" and b=v and s=s and x=x and y=c])
         apply safe
-        apply rule
-        apply rule
-        apply safe
-        apply(rule Seq) apply simp
-           apply(rule Seq) 
-             apply(drule f) apply safe
-        sorry
-      sorry
+        subgoal for tt1 ss1
+          apply(rule exI[where x=tt1])
+          apply(rule exI[where x=ss1])
+          apply simp
+          apply(rule seq_post)
+          subgoal premises p using f[of ss1 x, OF p(2)[symmetric]]
+            apply rule apply clarsimp
+            subgoal for tt2 ss2
+              apply(rule exI[where x=tt2])
+              apply(rule exI[where x=ss2]) apply simp
+              apply(rule seq_post)
+
+              using encode_pair_correct[rule_format, of "''r''" v "''x''" ss2]
+              apply clarsimp
+              subgoal for tt3 ss3
+                apply(rule exI[where x=tt3])
+                apply(rule exI[where x=ss3])
+                apply simp
+                subgoal premises p2
+                  using f_dep2[OF _ p2(1) f_0] p(2)[symmetric] apply simp 
+                  using co[of ss3] using p2(6) p(3) f_only_changes_its_vars[OF vnf p2(1) ]
+                  apply simp apply safe
+                  subgoal for tt4 ss4
+                    apply(rule exI[where x=tt4])
+                    apply(rule exI[where x=ss4]) apply simp
+                    subgoal sorry
+                    done
+                  done
+                done
+              done
+            done
+          done
+        done
+      done
   next
-    (* könnte funktionieren mit proof by contradiction *)
+    fix x c
+    assume "len c \<le> p_c_D' (p_r (len x))"
+       and a: "\<forall>s. s ''x'' = enc_pair (x, c) \<longrightarrow> (\<exists>t s'. (P, s) \<Rightarrow> t \<Down> s' \<and> t \<le> ppp (len (enc_pair (x, c))) \<and> s' ''r'' = 1)"
 
+    from a[rule_format, of "0(''x'':=enc_pair (x, c))"]
+    obtain t4 s4 where P4: "(P, 0(''x'' := enc_pair (x, c))) \<Rightarrow> t4 \<Down> s4" and "t4 \<le> ppp (len (enc_pair (x, c)))" and s4r: "s4 ''r'' = 1 "
+      by auto
+
+
+
+    from P4[unfolded P_def, THEN SeqD] obtain t1 tr1 s1 where
+     d1: "(decode_pair ''x'' v, 0(''x'' := enc_pair (x, c))) \<Rightarrow> t1 \<Down> s1"
+     and  r1: "(f;; (encode_pair ''r'' v ''x'';; P_D'), s1) \<Rightarrow> tr1 \<Down> s4" and "t4 = t1 + tr1 "
+      by blast
+ 
+
+    from  decode_pair_correct'[of "0(''x'' := enc_pair (x, c))" x c "''x''" v ]
+    obtain t1' s1' where d2: "(decode_pair ''x'' v, 0(''x'' := enc_pair (x, c))) \<Rightarrow> t1' \<Down> s1'"
+        and d2_corr: "s1' ''x'' = x" "s1' v = c" by auto
+
+    term t1
+
+    from  decode_pair_deterministic[OF _ d1 d2]
+    have 11: "t1 = t1' \<and> s1 ''x'' = s1' ''x'' \<and> s1 v = s1' v"  by auto
+
+    have s1v: "s1 v = c" using d2_corr 11 by simp
+
+    from f[of s1 x] obtain t2' s2'
+      where f_0: "(f, s1) \<Rightarrow> t2' \<Down> s2'" and lens'r: "len (s2' ''r'') \<le> p_r (len x)"
+          and "t2' \<le> p_f (len x)" and 2: "(s2' ''r'' \<in> D') = (x \<in> D)"
+      using d2_corr 11
+      by auto
+
+    from r1[THEN SeqD] obtain t2 tr2 s2 where
+      f1:  "(f, s1) \<Rightarrow> t2 \<Down> s2" and r2: "(encode_pair ''r'' v ''x'';; P_D', s2) \<Rightarrow> tr2 \<Down> s4" and "tr1 = t2 + tr2"
+      by blast
+
+    from f_dep2[OF _ f_0 f1] have 22: "t2' = t2" "s2' ''r'' = s2 ''r''" by auto
+
+    from r2[THEN SeqD] obtain t3 tr3 s3 where
+      e1:  "(encode_pair ''r'' v ''x'', s2) \<Rightarrow> t3 \<Down> s3" and r3: "(P_D', s3) \<Rightarrow> tr3 \<Down> s4" and "tr2 = t3 + tr3"
+      by blast
+
+    from f_only_changes_its_vars[OF vnf  f1] have s2v: "s2 v = s1 v" by simp
+
+    from  encode_pair_correct[rule_format, of "''r''" v "''x''" s2] 
+    obtain t3' s3' where e2: "(encode_pair ''r'' v ''x'', s2) \<Rightarrow> t3' \<Down> s3'"
+        and e3_corr: "s3' ''x'' = enc_pair (s2 ''r'', s2 v)" by auto
+
+   
+    from encode_pair_determ[OF _ _ e1 e2] have 3: "t3 = t3' \<and> s3 ''x'' = s3' ''x''"
+      by auto
+
+
+    define x' where "x' = s2 ''r''"
+    have "(\<exists>c. len c \<le> p_c_D' (len x') \<and> (\<forall>s. s ''x'' = enc_pair (x', c) \<longrightarrow> (\<exists>t s'. (P_D', s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t_D' (len (enc_pair (x', c))) \<and> s' ''r'' = 1)))"
+      apply(rule exI[where x=c])
+      apply safe
+      subgoal sorry
+    proof (goal_cases)
+      case g: (1 ss) 
+      from P_D'_dep[OF _ r3, of ss] e3_corr[folded x'_def, unfolded s2v s1v] 3 g
+      obtain ss2' tt2 where ta: "(P_D', ss) \<Rightarrow> tt2 \<Down> ss2'" and "tr3 = tt2" and ta3: "s4 ''r'' = ss2' ''r''" by auto
+
+
+      from P_D'_dep2[OF _ ta r3] e3_corr[folded x'_def, unfolded s2v s1v] 3 g
+        have 44: "tt2 = tr3 \<and> ss2' ''r'' = s4 ''r''" by auto
+                 
+      show ?case apply(rule exI[where x=tt2]) 
+        apply(rule exI[where x=ss2'])
+        apply safe
+        subgoal using ta by simp
+        subgoal sorry
+        subgoal using ta3 s4r by simp
+        done
+    qed
+
+    with * have "x'\<in>D'" by auto
+    with x'_def 2 22 show "x\<in>D" by auto
+  next
+    show "P \<in> wf_com" by(fact P_wf)
   qed
-
-  oops
+qed
 
 
 section \<open>Witness Existence\<close>
