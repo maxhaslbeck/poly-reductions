@@ -37,10 +37,32 @@ WhileTrue: "\<lbrakk> s1 r \<noteq> 0;  (c,s1) \<Rightarrow> x \<Down> s2;  (WHI
 print_theorems
 
 
+lemma SeqD: "(c1;;c2,s) \<Rightarrow> t \<Down> s'' \<Longrightarrow> (\<exists>t1 t2 s'. (c1,s) \<Rightarrow> t1 \<Down> s' \<and> (c2,s') \<Rightarrow> t2 \<Down> s'' \<and> t = t1 + t2)"
+  apply(cases rule: big_step_t.cases) apply simp
+       apply simp_all
+  apply auto done
+  
+
+lemma seq_post: "(\<exists>t1 s' t2 s''. (c1,s) \<Rightarrow> t1 \<Down> s' \<and> (c2,s') \<Rightarrow> t2 \<Down> s'' \<and> Q (t1+t2) s'') \<Longrightarrow> (\<exists>t s''. (c1;;c2,s) \<Rightarrow> t \<Down> s'' \<and> Q t s'')"
+  apply auto
+  subgoal for t1 s' t2 s''
+    apply(rule exI[where x="t1+t2"])
+    apply(rule exI[where x=s''])
+    apply simp
+    apply rule apply simp_all
+    done
+  done
 
 fun vars :: "com \<Rightarrow> register set" where
   "vars SKIP = {}"
 |  "vars (c1;;c2) = vars c1 \<union> vars c2"
+
+
+lemma finite_vars: "finite (vars f)"
+  sorry
+
+lemma f_only_changes_its_vars: "v \<notin> vars f \<Longrightarrow> (f,s) \<Rightarrow> t \<Down> s' \<Longrightarrow> s' v = s v"
+  sorry
 
 (* TODO: define small step semantics *)
 
@@ -65,6 +87,53 @@ lemma
   assumes "(c,s) \<Rightarrow> t \<Down> s'"
   shows "time (c,s) = t"
   sorry
+
+
+lemma deterministic: "(c, s) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow> (c, s) \<Rightarrow> t2 \<Down> s2' \<Longrightarrow> t1 = t2 \<and> s1' = s2'"
+  sorry
+
+definition depends_only_on_input where
+  "depends_only_on_input P \<equiv> (\<forall>s1 s1' t s2. s1 ''x'' = s2 ''x'' \<longrightarrow> ((P,s1) \<Rightarrow> t \<Down> s1')
+                                  \<longrightarrow> (\<exists>s2'. ((P,s2) \<Rightarrow> t \<Down> s2') \<and> s1' ''r'' = s2' ''r''))"
+
+
+lemma depends_only_on_inputD:
+  assumes  "depends_only_on_input c"
+  shows "\<And>s1 s1' t1 t2 s2 s2'. s1 ''x'' = s2 ''x'' \<Longrightarrow> ((c,s1) \<Rightarrow> t1 \<Down> s1')
+                      \<Longrightarrow> (\<exists>t2 s2'. ((c,s2) \<Rightarrow> t2 \<Down> s2') \<and> t1 = t2 \<and>  s1' ''r'' = s2' ''r'')"
+  using assms unfolding depends_only_on_input_def 
+  using deterministic  by blast
+
+definition deterministic_on_input where
+  "deterministic_on_input P \<equiv> (\<forall>s1 s2 s1' s2' t1 t2. s1 ''x'' = s2 ''x'' \<longrightarrow> (P,s1) \<Rightarrow> t1 \<Down> s1'
+      \<longrightarrow>  (P,s2) \<Rightarrow> t2 \<Down> s2' \<longrightarrow> t1=t2 \<and> s1' ''r'' = s2' ''r'')"  
+
+
+lemma deterministic_on_inputD:
+  assumes  "deterministic_on_input c"
+  shows "\<And>s1 s2 s1' s2' t1 t2. s1 ''x'' = s2 ''x'' \<Longrightarrow> (c,s1) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow>  (c,s2) \<Rightarrow> t2 \<Down> s2' \<Longrightarrow> t1=t2 \<and> s1' ''r'' = s2' ''r''"
+  using assms unfolding deterministic_on_input_def 
+  by blast
+
+
+lemma 
+  deterministic_on_input_if_depends_only_on_input:
+  assumes d:"depends_only_on_input P"
+  shows "deterministic_on_input P"
+  unfolding deterministic_on_input_def
+proof (rule)+
+  fix s1 s2 s1' s2' t1 t2
+  assume x: "s1 ''x'' = s2 ''x''" and P: "(P, s1) \<Rightarrow> t1 \<Down> s1'" and Ps2a: "(P, s2) \<Rightarrow> t2 \<Down> s2'"
+  
+  from d[THEN depends_only_on_inputD, OF _ P, of s2, OF x] obtain t3 s3'
+    where Ps2b: "(P, s2) \<Rightarrow> t3 \<Down> s3'" and 3: "t1 = t3" "s1' ''r'' = s3' ''r'' " by blast
+
+  from deterministic[OF Ps2a Ps2b]
+    have 2: "t2 = t3 \<and> s2' = s3'" by simp
+
+  show "t1=t2" using 2 3 by simp
+  show "s1' ''r'' = s2' ''r''" using 2 3 by simp
+qed
 
 
 
@@ -96,14 +165,62 @@ locale SAT_encoding =
 begin
 
 
+section \<open>Axiomatize IMP- programs that decode and encode\<close>
+(*
+definition decode_pair' :: "_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>com" where
+  "decode_pair' S a b = undefined"
+
+lemma decode_pair'_correct:
+  "finite S \<Longrightarrow> (\<forall>s. s ''x'' = enc_pair (x, y) \<longrightarrow> 
+    (\<exists>t s'. (decode_pair' S a b,s) \<Rightarrow> t \<Down> s' \<and> s' a = x \<and> s' b = y \<and> (\<forall>v\<in>S. s' v = s v)))"
+  sorry *)
+
+definition decode_pair :: "_\<Rightarrow>_\<Rightarrow>com" where
+  "decode_pair  a b = undefined"
+
+
+\<comment> \<open>The specification of decode_pair needs to have a polynomial running time bound\<close>
+lemma decode_pair_correct':
+  "(s ''x'' = enc_pair (x, y) \<Longrightarrow> 
+    (\<exists>t s'. (decode_pair  a b,s) \<Rightarrow> t \<Down> s' \<and> s' a = x \<and> s' b = y ))"
+  sorry
+
+lemma decode_pair_deterministic:
+  "s ''x'' = s2 ''x'' \<Longrightarrow> (decode_pair a b,s) \<Rightarrow> t \<Down> s' \<Longrightarrow> (decode_pair a b,s2) \<Rightarrow> t2 \<Down> s2'
+    \<Longrightarrow> t=t2 \<and> s' a = s2' a \<and> s' b = s2' b"
+  sorry
+
+(*
+definition encode_pair' :: "_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>com" where
+  "encode_pair' S a b c = undefined"
+
+lemma encode_pair'_correct:
+  "finite S \<Longrightarrow> (\<forall>s. (\<exists>t s'. (encode_pair' S a b c,s) \<Rightarrow> t \<Down> s' \<and> s' c = enc_pair (s a, s b) \<and> (\<forall>v\<in>S. s' v = s v)))"
+  sorry
+*)
+
+definition encode_pair :: "_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>com" where
+  "encode_pair  a b c = undefined"
+
+
+\<comment> \<open>The specification of encode_pair needs to have a polynomial running time bound\<close>
+
+lemma encode_pair_correct:
+  "(\<forall>s. (\<exists>t s'. (encode_pair a b c,s) \<Rightarrow> t \<Down> s' \<and> s' c = enc_pair (s a, s b)))"
+  sorry
+
+lemma encode_pair_determ:
+  "s1 a = s2 a \<Longrightarrow> s1 b = s2 b \<Longrightarrow> (encode_pair a b c,s1) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow> (encode_pair a b c,s2) \<Rightarrow> t2 \<Down> s2' \<Longrightarrow> 
+      t1=t2 \<and> s1' c = s2' c"
+  sorry
+
+
+
 section \<open>P - deterministic polynomial computation\<close>
 
-definition depends_on_input where
-  "depends_on_input P \<equiv> (\<forall>s1 s1' t s2. s1 ''x'' = s2 ''x'' \<longrightarrow> ((P,s1) \<Rightarrow> t \<Down> s1')
-                                  \<longrightarrow> (\<exists>s2'. ((P,s2) \<Rightarrow> t \<Down> s2') \<and> s1' ''r'' = s2' ''r''))"
 
 definition wf_com where
-  "wf_com \<equiv> {P. depends_on_input P}"
+  "wf_com \<equiv> {P. depends_only_on_input P}"
 
 
 definition len :: "nat \<Rightarrow> nat" where "len x = undefined"
@@ -132,23 +249,8 @@ definition NP where
                   )
                 )
         }"
-
-lemma deterministic: "(c, s) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow> (c, s) \<Rightarrow> t2 \<Down> s2' \<Longrightarrow> t1 = t2 \<and> s1' = s2'"
-  sorry
-
-
-
-lemma depends_on_inputD:
-  assumes  "depends_on_input c"
-  shows "\<And>s1 s1' t1 t2 s2 s2'. s1 ''x'' = s2 ''x'' \<Longrightarrow> ((c,s1) \<Rightarrow> t1 \<Down> s1')
-                      \<Longrightarrow> (\<exists>t2 s2'. ((c,s2) \<Rightarrow> t2 \<Down> s2') \<and> t1 = t2 \<and>  s1' ''r'' = s2' ''r'')"
-  using assms unfolding depends_on_input_def 
-  using deterministic  by blast
   
-(*  Attempt to define NP using the definition of P
-  apparently the rhs is stronger, it implies the lhs,
-  but I could not yet show equivalence
- *)
+(*  Attempt to define NP using the definition of P *)
 lemma "D \<in> NP \<longleftrightarrow> (\<exists>D\<^sub>C\<in>P. (\<exists>p_c. poly p_c \<and> (\<forall>x. x\<in>D \<longleftrightarrow> (\<exists>c. len c \<le> p_c (len x) \<and> enc_pair(x,c) \<in> D\<^sub>C))))"
   unfolding NP_def P_def 
   apply simp
@@ -173,9 +275,9 @@ lemma "D \<in> NP \<longleftrightarrow> (\<exists>D\<^sub>C\<in>P. (\<exists>p_c
     subgoal for x c s t s'
       apply (rule exI[where x = c], rule conjI, assumption)
       apply auto
-      subgoal premises p for s1 \<comment> \<open>The definition of @{term depends_on_input} is too weak:
-        we are missing termination\<close>
-        using p(1)[unfolded wf_com_def, simplified, THEN depends_on_inputD, of s s1, simplified p(6,10), OF _ p(7)]
+      subgoal premises p for s1 \<comment> \<open>The definition of @{term depends_only_on_input} does not necessarily need to ensure termination,
+            here we already know that P terminates on s, and that it only depends on the value of ''x''.\<close>
+        using p(1)[unfolded wf_com_def, simplified, THEN depends_only_on_inputD, of s s1, simplified p(6,10), OF _ p(7)]
         apply auto subgoal for s2'
           apply(rule exI[where x=t])
           apply(rule exI[where x=s2'])
@@ -194,8 +296,9 @@ lemma "D \<in> NP \<longleftrightarrow> (\<exists>D\<^sub>C\<in>P. (\<exists>p_c
       apply rule
       subgoal apply safe subgoal for c t s s' apply(rule exI[where x= c]) apply simp
         apply safe  subgoal premises p for s1
-          \<comment> \<open>Again, we are missing termination in @{term depends_on_input}\<close>
-          using prems(1)[unfolded wf_com_def, simplified, THEN depends_on_inputD, of s s1, simplified p(2,6), OF _ p(3)]
+            \<comment> \<open>The definition of @{term depends_only_on_input} does not necessarily need to ensure termination,
+            here we already know that P terminates on s, and that it only depends on the value of ''x''.\<close>
+          using prems(1)[unfolded wf_com_def, simplified, THEN depends_only_on_inputD, of s s1, simplified p(2,6), OF _ p(3)]
           apply auto 
           subgoal for s2' apply(rule exI[where x=t]) apply(rule exI[where x=s2']) using prems p by auto
           done
@@ -246,7 +349,7 @@ text \<open>@{term \<open>A \<le>\<^sub>I B\<close>} : "A can be reduced to B".
   \<^item> "if A is unsolvable, B also is"
    \<close>
 
-
+text \<open>That's the definition I use later, is it equivalent to the above definition?\<close>
 lemma IMP_reduction_alt:
   "D \<le>\<^sub>I D' =
    (\<exists>p_t p_r. poly p_t \<and> poly p_r \<and> 
@@ -265,71 +368,6 @@ text \<open>A problem in B in NP is NP-complete if, for any problem in NP, there
 
 definition "NP_complete D = undefined"
 
-
-definition decode_pair' :: "_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>com" where
-  "decode_pair' S a b = undefined"
-
-lemma decode_pair'_correct:
-  "finite S \<Longrightarrow> (\<forall>s. s ''x'' = enc_pair (x, y) \<longrightarrow> 
-    (\<exists>t s'. (decode_pair' S a b,s) \<Rightarrow> t \<Down> s' \<and> s' a = x \<and> s' b = y \<and> (\<forall>v\<in>S. s' v = s v)))"
-  sorry
-definition decode_pair :: "_\<Rightarrow>_\<Rightarrow>com" where
-  "decode_pair  a b = undefined"
-
-lemma decode_pair_correct':
-  "(s ''x'' = enc_pair (x, y) \<Longrightarrow> 
-    (\<exists>t s'. (decode_pair  a b,s) \<Rightarrow> t \<Down> s' \<and> s' a = x \<and> s' b = y ))"
-  sorry
-
-lemma decode_pair_deterministic:
-  "s ''x'' = s2 ''x'' \<Longrightarrow> (decode_pair a b,s) \<Rightarrow> t \<Down> s' \<Longrightarrow> (decode_pair a b,s2) \<Rightarrow> t2 \<Down> s2'
-    \<Longrightarrow> t=t2 \<and> s' a = s2' a \<and> s' b = s2' b"
-  sorry
-
-
-definition encode_pair' :: "_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>com" where
-  "encode_pair' S a b c = undefined"
-
-definition encode_pair :: "_\<Rightarrow>_\<Rightarrow>_\<Rightarrow>com" where
-  "encode_pair  a b c = undefined"
-
-lemma encode_pair'_correct:
-  "finite S \<Longrightarrow> (\<forall>s. (\<exists>t s'. (encode_pair' S a b c,s) \<Rightarrow> t \<Down> s' \<and> s' c = enc_pair (s a, s b) \<and> (\<forall>v\<in>S. s' v = s v)))"
-  sorry
-
-lemma encode_pair_correct:
-  "(\<forall>s. (\<exists>t s'. (encode_pair a b c,s) \<Rightarrow> t \<Down> s' \<and> s' c = enc_pair (s a, s b)))"
-  sorry
-
-lemma encode_pair_determ:
-  "s1 a = s2 a \<Longrightarrow> s1 b = s2 b \<Longrightarrow> (encode_pair a b c,s1) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow> (encode_pair a b c,s2) \<Rightarrow> t2 \<Down> s2' \<Longrightarrow> 
-      t1=t2 \<and> s1' c = s2' c"
-  sorry
-
-
-
-lemma finite_vars: "finite (vars f)"
-  sorry
-
-lemma f_only_changes_its_vars: "v \<notin> vars f \<Longrightarrow> (f,s) \<Rightarrow> t \<Down> s' \<Longrightarrow> s' v = s v"
-  sorry
-
-
-lemma SeqD: "(c1;;c2,s) \<Rightarrow> t \<Down> s'' \<Longrightarrow> (\<exists>t1 t2 s'. (c1,s) \<Rightarrow> t1 \<Down> s' \<and> (c2,s') \<Rightarrow> t2 \<Down> s'' \<and> t = t1 + t2)"
-  apply(cases rule: big_step_t.cases) apply simp
-       apply simp_all
-  apply auto done
-  
-
-lemma seq_post: "(\<exists>t1 s' t2 s''. (c1,s) \<Rightarrow> t1 \<Down> s' \<and> (c2,s') \<Rightarrow> t2 \<Down> s'' \<and> Q (t1+t2) s'') \<Longrightarrow> (\<exists>t s''. (c1;;c2,s) \<Rightarrow> t \<Down> s'' \<and> Q t s'')"
-  apply auto
-  subgoal for t1 s' t2 s''
-    apply(rule exI[where x="t1+t2"])
-    apply(rule exI[where x=s''])
-    apply simp
-    apply rule apply simp_all
-    done
-  done
 (*    assumes "D' \<in> NP"and "D \<le>\<^sub>I D'"shows "D \<in> NP" *)
 theorem (* Sanity check for definition of NP and poly-reduction *)
   inNP_if_reducible_to_inNP:
@@ -356,19 +394,23 @@ proof -
     unfolding IMP_reduction_alt
     by blast
 
+  have df: "depends_only_on_input f"
+    using wf_f unfolding wf_com_def   by blast
+  have dP_D': "depends_only_on_input P_D'"
+    using wf_P_D' unfolding wf_com_def   by blast
+
   (* f's time and result only depends on ''x'' *)
   have f_dep: "\<And>s1 s2 s1' s2' t1 t2. s1 ''x'' = s2 ''x'' \<Longrightarrow> (f,s1) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow> (\<exists>s2' t2.  (f,s2) \<Rightarrow> t2 \<Down> s2' \<and> t1=t2 \<and> s1' ''r'' = s2' ''r'')" 
-    using wf_f unfolding wf_com_def depends_on_input_def   by blast
+    using df depends_only_on_input_def by blast
 
-  have f_dep2: "\<And>s1 s2 s1' s2' t1 t2. s1 ''x'' = s2 ''x'' \<Longrightarrow> (f,s1) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow>  (f,s2) \<Rightarrow> t2 \<Down> s2' \<Longrightarrow> t1=t2 \<and> s1' ''r'' = s2' ''r''" 
-    sorry
+  have f_dep2: "\<And>s1 s2 s1' s2' t1 t2. s1 ''x'' = s2 ''x'' \<Longrightarrow> (f,s1) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow>  (f,s2) \<Rightarrow> t2 \<Down> s2' \<Longrightarrow> t1=t2 \<and> s1' ''r'' = s2' ''r''"  
+    using df[THEN deterministic_on_input_if_depends_only_on_input] unfolding deterministic_on_input_def by auto 
 
   have P_D'_dep: "\<And>s1 s2 s1' s2' t1 t2. s1 ''x'' = s2 ''x'' \<Longrightarrow> (P_D',s1) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow> (\<exists>s2' t2.  (P_D',s2) \<Rightarrow> t2 \<Down> s2' \<and> t1=t2 \<and> s1' ''r'' = s2' ''r'')" 
-    using wf_P_D' unfolding wf_com_def depends_on_input_def   by blast
-
+    using wf_P_D' unfolding wf_com_def depends_only_on_input_def   by blast
 
   have P_D'_dep2: "\<And>s1 s2 s1' s2' t1 t2. s1 ''x'' = s2 ''x'' \<Longrightarrow> (P_D',s1) \<Rightarrow> t1 \<Down> s1' \<Longrightarrow>  (P_D',s2) \<Rightarrow> t2 \<Down> s2' \<Longrightarrow> t1=t2 \<and> s1' ''r'' = s2' ''r''" 
-    sorry
+    using dP_D'[THEN deterministic_on_input_if_depends_only_on_input] unfolding deterministic_on_input_def by auto 
 
 
   have "\<And>P Q. (~(\<forall>x. P x \<longrightarrow> Q x)) \<longleftrightarrow> (\<exists>x. P x \<and> ~ Q x)" by blast  
@@ -391,33 +433,38 @@ proof -
           now encode (x',c) into ''x''
           then execute P_D' on on (x',c) to get the right result *) 
 
-  have P_wf: "P \<in> wf_com" sorry
+  have P_wf: "P \<in> wf_com" sorry \<comment> \<open>Prove that P is indeed wellformed, i.e. if it terminates, the result only depends on the input x.\<close>
 
   let ?pp = "(\<lambda>x. p_c_D' (p_r x))"
-  have p_c_D'_mono: "\<And>x y. x\<le>y \<Longrightarrow> p_c_D' x \<le> p_c_D' y"  sorry
+
+  
+  have p_c_D'_mono: "\<And>x y. x\<le>y \<Longrightarrow> p_c_D' x \<le> p_c_D' y"  sorry \<comment> \<open>add monotonicity of the bounding polynomial to the definition of NP ?\<close>
 
   show "D \<in> NP"
     unfolding NP_def
     apply safe
     apply(rule bexI[where x=P])
-     apply(rule exI[where x=ppp]) (* incorporates - decode_time
-                                                  - p_f
-                                                  - encode_time
-                                                  - p_t_D'
-       *)
+     apply(rule exI[where x=ppp]) 
+          \<comment> \<open>specify the running time bound.
+              it should contain: 
+                - decode_time
+                - p_f
+                - encode_time
+                - p_t_D'
+            \<close>
     apply(rule exI[where x="?pp"])
     apply safe
-    subgoal sorry
-    subgoal sorry
+    subgoal sorry \<comment> \<open>Prove that the bound on the running time of P is poly\<close>
+    subgoal sorry \<comment> \<open>Prove that the bound on the size the certificate is polynomial\<close>
   proof -
     fix x
     assume a: "x\<in>D"
-    (* we have the x:D, now "execute" f to get a x':D'*)
+    \<comment> \<open>we have the x:D, now "execute" f to get a x':D'\<close>
     from f[of "0(''x'':=x)" x] obtain t s'
       where f_0: "(f, 0(''x'' := x)) \<Rightarrow> t \<Down> s'" and lens'r: "len (s' ''r'') \<le> p_r (len x)"
           and "t \<le> p_f (len x)" and 2: "(s' ''r'' \<in> D') = (x \<in> D)"
       by auto
-    (* from that one get a witness c *)
+    \<comment> \<open>from that one get a witness c\<close>
     from a 2 *[of "s' ''r''"] obtain c where len_c: "len c\<le>p_c_D' (len (s' ''r''))"
         and co: "\<And>s. s ''x'' = enc_pair (s' ''r'', c) \<Longrightarrow> (\<exists>t s'a. (P_D', s) \<Rightarrow> t \<Down> s'a \<and> t \<le> p_t_D' (len (enc_pair (s' ''r'', c))) \<and> s'a ''r'' = 1)"
       by blast
@@ -445,7 +492,8 @@ proof -
             apply rule apply clarsimp
             subgoal for tt2 ss2
               apply(rule exI[where x=tt2])
-              apply(rule exI[where x=ss2]) apply simp
+              apply(rule exI[where x=ss2])
+              apply simp
               apply(rule seq_post)
 
               using encode_pair_correct[rule_format, of "''r''" v "''x''" ss2]
@@ -461,7 +509,7 @@ proof -
                   subgoal for tt4 ss4
                     apply(rule exI[where x=tt4])
                     apply(rule exI[where x=ss4]) apply simp
-                    subgoal sorry
+                    subgoal sorry \<comment> \<open>Prove that the running time is indeed bounded by the bound stated.\<close>
                     done
                   done
                 done
@@ -472,20 +520,17 @@ proof -
       done
   next
     fix x c
-    assume "len c \<le> p_c_D' (p_r (len x))"
+    assume lenc: "len c \<le> p_c_D' (p_r (len x))"
        and a: "\<forall>s. s ''x'' = enc_pair (x, c) \<longrightarrow> (\<exists>t s'. (P, s) \<Rightarrow> t \<Down> s' \<and> t \<le> ppp (len (enc_pair (x, c))) \<and> s' ''r'' = 1)"
 
     from a[rule_format, of "0(''x'':=enc_pair (x, c))"]
-    obtain t4 s4 where P4: "(P, 0(''x'' := enc_pair (x, c))) \<Rightarrow> t4 \<Down> s4" and "t4 \<le> ppp (len (enc_pair (x, c)))" and s4r: "s4 ''r'' = 1 "
+    obtain t4 s4 where P4: "(P, 0(''x'' := enc_pair (x, c))) \<Rightarrow> t4 \<Down> s4" and t4: "t4 \<le> ppp (len (enc_pair (x, c)))" and s4r: "s4 ''r'' = 1 "
       by auto
-
-
 
     from P4[unfolded P_def, THEN SeqD] obtain t1 tr1 s1 where
      d1: "(decode_pair ''x'' v, 0(''x'' := enc_pair (x, c))) \<Rightarrow> t1 \<Down> s1"
      and  r1: "(f;; (encode_pair ''r'' v ''x'';; P_D'), s1) \<Rightarrow> tr1 \<Down> s4" and "t4 = t1 + tr1 "
       by blast
- 
 
     from  decode_pair_correct'[of "0(''x'' := enc_pair (x, c))" x c "''x''" v ]
     obtain t1' s1' where d2: "(decode_pair ''x'' v, 0(''x'' := enc_pair (x, c))) \<Rightarrow> t1' \<Down> s1'"
@@ -520,16 +565,19 @@ proof -
     obtain t3' s3' where e2: "(encode_pair ''r'' v ''x'', s2) \<Rightarrow> t3' \<Down> s3'"
         and e3_corr: "s3' ''x'' = enc_pair (s2 ''r'', s2 v)" by auto
 
-   
     from encode_pair_determ[OF _ _ e1 e2] have 3: "t3 = t3' \<and> s3 ''x'' = s3' ''x''"
       by auto
-
 
     define x' where "x' = s2 ''r''"
     have "(\<exists>c. len c \<le> p_c_D' (len x') \<and> (\<forall>s. s ''x'' = enc_pair (x', c) \<longrightarrow> (\<exists>t s'. (P_D', s) \<Rightarrow> t \<Down> s' \<and> t \<le> p_t_D' (len (enc_pair (x', c))) \<and> s' ''r'' = 1)))"
       apply(rule exI[where x=c])
       apply safe
-      subgoal sorry
+      subgoal
+        unfolding x'_def
+        apply(rule order.trans) 
+         apply(rule lenc)   
+        apply(rule p_c_D'_mono)
+        using lens'r sorry \<comment> \<open>Whoopsie, why is that?\<close>
     proof (goal_cases)
       case g: (1 ss) 
       from P_D'_dep[OF _ r3, of ss] e3_corr[folded x'_def, unfolded s2v s1v] 3 g
@@ -543,7 +591,7 @@ proof -
         apply(rule exI[where x=ss2'])
         apply safe
         subgoal using ta by simp
-        subgoal sorry
+        subgoal using t4  sorry \<comment> \<open>the running time bound is a sum, it needs to be separated to get that estimation\<close>
         subgoal using ta3 s4r by simp
         done
     qed
